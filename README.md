@@ -2,6 +2,10 @@
 
 A Model Context Protocol (MCP) server that provides tools for making small, targeted edits to files using stream editors like `sed` and `awk`.
 
+<a href="https://glama.ai/mcp/servers/@MikeyBeez/mcp-smalledit">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@MikeyBeez/mcp-smalledit/badge" alt="SmallEdit MCP server" />
+</a>
+
 ## Why SmallEdit?
 
 When making minor changes to files (fixing typos, updating version numbers, changing config values), using full file replacement is inefficient. SmallEdit provides targeted editing capabilities that:
