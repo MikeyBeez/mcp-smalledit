@@ -38,7 +38,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: 'sed_edit',
-        description: 'Make small edits to files using sed patterns. Efficient for single-line changes, pattern replacements, and simple text transformations.',
+        description: '📝 LIVING ARCHITECTURE: Map-breaking changes (new tools, paths, integrations) need immediate architecture doc updates! Make small edits to files using sed patterns. Efficient for single-line changes, pattern replacements, and simple text transformations.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -66,7 +66,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'sed_multifile',
-        description: 'Apply sed pattern to multiple files matching a glob pattern',
+        description: '📝 LIVING ARCHITECTURE: Bulk changes across files may require architecture doc updates! Apply sed pattern to multiple files matching a glob pattern',
         inputSchema: {
           type: 'object',
           properties: {
@@ -264,10 +264,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'help',
-        description: 'Get comprehensive documentation for all smalledit functions',
+        description: 'Get detailed help and examples for smalledit tools',
         inputSchema: {
           type: 'object',
-          properties: {}
+          properties: {
+            tool: {
+              type: 'string',
+              description: 'Tool name for help (e.g., "sed_edit", "perl_edit") or "all" for overview'
+            }
+          }
         }
       }
     ]
@@ -323,6 +328,12 @@ USE FILESYSTEM TOOLS INSTEAD FOR:
 - For YAML files → Consider yq instead  
 - For modern sed → Install 'sd' (brew install sd)
 - For better grep → Use ripgrep (rg)
+
+💡 RECOMMENDED WORKFLOW:
+1. Use diff_preview first to check changes
+2. If it looks good, apply the edit
+3. If something goes wrong, use restore_backup
+4. Use list_backups to find and clean old backups
 
 General tips:
 - Always use preview/diff_preview to test first
@@ -568,13 +579,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           const tempFile = `${file}.preview.tmp`;
           await execAsync(`rm -f .bak; cp '${file}' '${tempFile}'`);
           
-          // Apply change to temp file
-          sedCmd = `perl -i -pe '${pattern}' '${tempFile}' && diff -u '${file}' '${tempFile}' | head -50; rm -f '${tempFile}'`;
-        } else {
-          // Use perl for actual edits (more portable than sed)
-          const backupExt = backup ? '.bak' : '';
-          sedCmd = `perl -i${backupExt} -pe '${pattern}' '${file}'`;
-        }
+          // Apply change to temp file - use double quotes and escape properly
+          const escapedPattern = pattern.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\
         
         const { stdout, stderr } = await execAsync(sedCmd);
         
@@ -888,51 +894,667 @@ ${content}' '${file}'`;
         };
       }
       
-      case 'help': {
-        // Use the existing comprehensive help system
-        const allHelp = Object.values(helpContent).join('\n\n');
-        const overviewHelp = `
-# 🔧 SmallEdit MCP Server - Efficient File Editing Tools
+      default:
+        throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+    }
+  } catch (error) {
+    throw new McpError(
+      ErrorCode.InternalError,
+      error instanceof Error ? error.message : 'Unknown error'
+    );
+  }
+});
 
-## Purpose
-MCP server for small file edits using sed, awk, perl and other stream editors. Optimized for quick, surgical text modifications with automatic backups.
-
-## 🏗️ LIVING ARCHITECTURE: New projects must be added to Master Architecture Index immediately!
-
-## Available Tools Overview
-- sed_edit: Make small edits to files using sed patterns  
-- sed_multifile: Apply sed pattern to multiple files matching a glob
-- awk_process: Process files using AWK for complex operations
-- quick_replace: Simple find and replace without regex
-- line_edit: Edit specific lines by number or range
-- perl_edit: Edit files using Perl one-liners (cross-platform)
-- diff_preview: Preview changes before applying them
-- restore_backup: Restore files from .bak backups
-- list_backups: Find all backup files
-- help: This comprehensive help system
-
-🎯 WHEN TO USE SMALLEDIT vs FILESYSTEM TOOLS:
-==========================================
-USE SMALLEDIT FOR:
-- Quick text replacements across files
-- Pattern-based editing (regex, sed patterns)
-- Line-specific modifications  
-- Cross-platform file editing
-- Operations requiring backups
-- Stream processing and text transforms
-
-USE FILESYSTEM TOOLS FOR:
-- Reading entire files
-- Creating new files
-- Directory operations
-- Binary file handling
-- Large file operations
-
-`;
+// Start the server
+const transport = new StdioServerTransport();
+server.connect(transport);
+console.error('MCP SmallEdit server running on stdio');
+);
+          sedCmd = `perl -i -pe "${escapedPattern}" '${tempFile}' && diff -u '${file}' '${tempFile}' | head -50; rm -f '${tempFile}'`;
+        } else {
+          // Use perl for actual edits (more portable than sed)
+          const backupExt = backup ? '.bak' : '';
+          const escapedPattern = pattern.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\
+        
+        const { stdout, stderr } = await execAsync(sedCmd);
+        
+        if (stderr) {
+          throw new Error(`Sed error: ${stderr}`);
+        }
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: preview ? 
+                `Preview of changes:\n${stdout || 'No changes would be made'}` :
+                `Successfully edited ${file}${backup ? ' (backup created as .bak)' : ''}`
+            }
+          ]
+        };
+      }
+      
+      case 'sed_multifile': {
+        const { pattern, filePattern, directory = '.', backup = true } = args;
+        
+        // Use find to get files matching pattern
+        const findCmd = `find ${directory} -name "${filePattern}" -type f`;
+        const { stdout: files } = await execAsync(findCmd);
+        
+        if (!files.trim()) {
+          return {
+            content: [{
+              type: 'text',
+              text: `No files found matching pattern: ${filePattern}`
+            }]
+          };
+        }
+        
+        const fileList = files.trim().split('\n');
+        const results = [];
+        
+        for (const file of fileList) {
+          try {
+            const backupExt = backup ? '.bak' : '';
+            const sedCmd = `perl -i${backupExt} -pe '${pattern}' '${file}'`;
+            await execAsync(sedCmd);
+            results.push(`✓ ${file}`);
+          } catch (error) {
+            results.push(`✗ ${file}: ${error.message}`);
+          }
+        }
+        
         return {
           content: [{
             type: 'text',
-            text: overviewHelp + '\n\n' + allHelp
+            text: `Processed ${fileList.length} files:\n${results.join('\n')}`
+          }]
+        };
+      }
+      
+      case 'awk_process': {
+        const { file, script, outputFile } = args;
+        
+        if (!existsSync(file)) {
+          throw new Error(`File not found: ${file}`);
+        }
+        
+        let awkCmd = `awk '${script}' '${file}'`;
+        if (outputFile) {
+          awkCmd += ` > '${outputFile}'`;
+        }
+        
+        const { stdout, stderr } = await execAsync(awkCmd);
+        
+        if (stderr) {
+          throw new Error(`AWK error: ${stderr}`);
+        }
+        
+        return {
+          content: [{
+            type: 'text',
+            text: outputFile ? 
+              `Processed ${file} -> ${outputFile}` :
+              stdout || 'AWK processing complete'
+          }]
+        };
+      }
+      
+      case 'quick_replace': {
+        const { file, find, replace, all = true } = args;
+        
+        if (!existsSync(file)) {
+          throw new Error(`File not found: ${file}`);
+        }
+        
+        // Escape special characters for sed
+        const escapedFind = find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const escapedReplace = replace.replace(/[&/\\]/g, '\\$&');
+        
+        const pattern = all ? 
+          `s/${escapedFind}/${escapedReplace}/g` :
+          `s/${escapedFind}/${escapedReplace}/`;
+        
+        const sedCmd = `sed -i.bak '${pattern}' '${file}'`;
+        await execAsync(sedCmd);
+        
+        return {
+          content: [{
+            type: 'text',
+            text: `Replaced "${find}" with "${replace}" in ${file}`
+          }]
+        };
+      }
+      
+      case 'line_edit': {
+        const { file, lineNumber, lineRange, action, content } = args;
+        
+        if (!existsSync(file)) {
+          throw new Error(`File not found: ${file}`);
+        }
+        
+        let sedCmd = 'sed -i.bak ';
+        const range = lineRange || `${lineNumber}`;
+        
+        switch (action) {
+          case 'replace':
+            sedCmd += `'${range}s/.*/${content}/' '${file}'`;
+            break;
+          case 'delete':
+            sedCmd += `'${range}d' '${file}'`;
+            break;
+          case 'insert_after':
+            sedCmd += `'${range}a\\
+${content}' '${file}'`;
+            break;
+          case 'insert_before':
+            sedCmd += `'${range}i\\
+${content}' '${file}'`;
+            break;
+          default:
+            throw new Error(`Unknown action: ${action}`);
+        }
+        
+        await execAsync(sedCmd);
+        
+        return {
+          content: [{
+            type: 'text',
+            text: `Successfully performed ${action} on line(s) ${range} in ${file}`
+          }]
+        };
+      }
+      
+      case 'perl_edit': {
+        const { file, script, backup = true, multiline = false } = args;
+        
+        if (!existsSync(file)) {
+          throw new Error(`File not found: ${file}`);
+        }
+        
+        const backupExt = backup ? '.bak' : '';
+        const multilineFlag = multiline ? '-0777 ' : '';
+        const perlCmd = `perl -i${backupExt} ${multilineFlag}-pe '${script}' '${file}'`;
+        
+        await execAsync(perlCmd);
+        
+        return {
+          content: [{
+            type: 'text',
+            text: `Successfully edited ${file} using Perl${backup ? ' (backup created as .bak)' : ''}`
+          }]
+        };
+      }
+      
+      case 'diff_preview': {
+        const { file, command, tool = 'perl' } = args;
+        
+        if (!existsSync(file)) {
+          throw new Error(`File not found: ${file}`);
+        }
+        
+        // Create temp file
+        const tempFile = `${file}.preview.tmp`;
+        await execAsync(`rm -f .bak; cp '${file}' '${tempFile}'`);
+        
+        // Apply command to temp file
+        let editCmd;
+        switch (tool) {
+          case 'perl':
+            editCmd = `perl -i -pe '${command}' '${tempFile}'`;
+            break;
+          case 'sed':
+            editCmd = `sed -i.tmp '${command}' '${tempFile}' && rm -f '${tempFile}.tmp'`;
+            break;
+          case 'awk':
+            editCmd = `awk '${command}' '${tempFile}' > '${tempFile}.new' && mv '${tempFile}.new' '${tempFile}'`;
+            break;
+        }
+        
+        await execAsync(editCmd);
+        
+        // Generate diff
+        const { stdout } = await execAsync(`diff -u '${file}' '${tempFile}' || true`);
+        
+        // Cleanup
+        await execAsync(`rm -f '${tempFile}'`);
+        
+        return {
+          content: [{
+            type: 'text',
+            text: stdout ? `Preview of changes:\n${stdout}` : 'No changes would be made'
+          }]
+        };
+      }
+      
+      case 'help': {
+        const { tool = 'all' } = args;
+        
+        const helpKey = tool === 'all' ? 'overview' : tool;
+        const content = helpContent[helpKey] || `No help available for tool: ${tool}\n\nAvailable tools: ${Object.keys(helpContent).join(', ')}`;
+        
+        return {
+          content: [{
+            type: 'text',
+            text: content
+          }]
+        };
+      }
+      
+      case 'restore_backup': {
+        const { file, keepBackup = true } = args;
+        
+        const backupFile = `${file}.bak`;
+        
+        // Check if backup exists
+        if (!existsSync(backupFile)) {
+          // Look for other common backup patterns
+          const alternatives = [
+            `${file}~`,
+            `${file}.backup`,
+            `${file}.orig`
+          ].filter(existsSync);
+          
+          if (alternatives.length > 0) {
+            throw new Error(`No .bak file found, but found: ${alternatives.join(', ')}`);
+          }
+          throw new Error(`No backup file found for ${file}`);
+        }
+        
+        // Read backup content
+        const backupContent = await readFile(backupFile, 'utf-8');
+        
+        // Check if current file exists and create a safety backup
+        if (existsSync(file)) {
+          await writeFile(`${file}.before-restore`, await readFile(file, 'utf-8'));
+        }
+        
+        // Restore the backup
+        await writeFile(file, backupContent);
+        
+        // Remove backup if requested
+        if (!keepBackup) {
+          await execAsync(`rm -f '${backupFile}'`);
+        }
+        
+        return {
+          content: [{
+            type: 'text',
+            text: `Successfully restored ${file} from backup${!keepBackup ? ' (backup removed)' : ''}\nSafety backup created: ${file}.before-restore`
+          }]
+        };
+      }
+      
+      case 'list_backups': {
+        const { directory = '.', pattern = '*.bak' } = args;
+        
+        // Find all backup files
+        const findCmd = `find ${directory} -name "${pattern}" -type f | head -100`;
+        const { stdout } = await execAsync(findCmd);
+        
+        if (!stdout.trim()) {
+          return {
+            content: [{
+              type: 'text',
+              text: `No backup files found matching pattern: ${pattern}`
+            }]
+          };
+        }
+        
+        const files = stdout.trim().split('\n');
+        
+        // Get file info for each backup
+        const backupInfo = [];
+        for (const backupFile of files) {
+          try {
+            const stats = await execAsync(`stat -f "%m %z" '${backupFile}' 2>/dev/null || stat -c "%Y %s" '${backupFile}'`);
+            const [mtime, size] = stats.stdout.trim().split(' ');
+            const date = new Date(parseInt(mtime) * 1000).toISOString().split('T')[0];
+            const sizeKB = Math.round(parseInt(size) / 1024);
+            
+            // Infer original file name
+            const originalFile = backupFile.replace(/\.(bak|backup|orig|~)$/, '');
+            backupInfo.push(`${backupFile} (${sizeKB}KB, ${date}) -> ${originalFile}`);
+          } catch {
+            backupInfo.push(backupFile);
+          }
+        }
+        
+        return {
+          content: [{
+            type: 'text',
+            text: `Found ${files.length} backup files:\n\n${backupInfo.join('\n')}\n\nTip: Use restore_backup to restore any of these files`
+          }]
+        };
+      }
+      
+      default:
+        throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+    }
+  } catch (error) {
+    throw new McpError(
+      ErrorCode.InternalError,
+      error instanceof Error ? error.message : 'Unknown error'
+    );
+  }
+});
+
+// Start the server
+const transport = new StdioServerTransport();
+server.connect(transport);
+console.error('MCP SmallEdit server running on stdio');
+);
+          sedCmd = `perl -i${backupExt} -pe "${escapedPattern}" '${file}'`;
+        }
+        
+        const { stdout, stderr } = await execAsync(sedCmd);
+        
+        if (stderr) {
+          throw new Error(`Sed error: ${stderr}`);
+        }
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: preview ? 
+                `Preview of changes:\n${stdout || 'No changes would be made'}` :
+                `Successfully edited ${file}${backup ? ' (backup created as .bak)' : ''}`
+            }
+          ]
+        };
+      }
+      
+      case 'sed_multifile': {
+        const { pattern, filePattern, directory = '.', backup = true } = args;
+        
+        // Use find to get files matching pattern
+        const findCmd = `find ${directory} -name "${filePattern}" -type f`;
+        const { stdout: files } = await execAsync(findCmd);
+        
+        if (!files.trim()) {
+          return {
+            content: [{
+              type: 'text',
+              text: `No files found matching pattern: ${filePattern}`
+            }]
+          };
+        }
+        
+        const fileList = files.trim().split('\n');
+        const results = [];
+        
+        for (const file of fileList) {
+          try {
+            const backupExt = backup ? '.bak' : '';
+            const sedCmd = `perl -i${backupExt} -pe '${pattern}' '${file}'`;
+            await execAsync(sedCmd);
+            results.push(`✓ ${file}`);
+          } catch (error) {
+            results.push(`✗ ${file}: ${error.message}`);
+          }
+        }
+        
+        return {
+          content: [{
+            type: 'text',
+            text: `Processed ${fileList.length} files:\n${results.join('\n')}`
+          }]
+        };
+      }
+      
+      case 'awk_process': {
+        const { file, script, outputFile } = args;
+        
+        if (!existsSync(file)) {
+          throw new Error(`File not found: ${file}`);
+        }
+        
+        let awkCmd = `awk '${script}' '${file}'`;
+        if (outputFile) {
+          awkCmd += ` > '${outputFile}'`;
+        }
+        
+        const { stdout, stderr } = await execAsync(awkCmd);
+        
+        if (stderr) {
+          throw new Error(`AWK error: ${stderr}`);
+        }
+        
+        return {
+          content: [{
+            type: 'text',
+            text: outputFile ? 
+              `Processed ${file} -> ${outputFile}` :
+              stdout || 'AWK processing complete'
+          }]
+        };
+      }
+      
+      case 'quick_replace': {
+        const { file, find, replace, all = true } = args;
+        
+        if (!existsSync(file)) {
+          throw new Error(`File not found: ${file}`);
+        }
+        
+        // Escape special characters for sed
+        const escapedFind = find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const escapedReplace = replace.replace(/[&/\\]/g, '\\$&');
+        
+        const pattern = all ? 
+          `s/${escapedFind}/${escapedReplace}/g` :
+          `s/${escapedFind}/${escapedReplace}/`;
+        
+        const sedCmd = `sed -i.bak '${pattern}' '${file}'`;
+        await execAsync(sedCmd);
+        
+        return {
+          content: [{
+            type: 'text',
+            text: `Replaced "${find}" with "${replace}" in ${file}`
+          }]
+        };
+      }
+      
+      case 'line_edit': {
+        const { file, lineNumber, lineRange, action, content } = args;
+        
+        if (!existsSync(file)) {
+          throw new Error(`File not found: ${file}`);
+        }
+        
+        let sedCmd = 'sed -i.bak ';
+        const range = lineRange || `${lineNumber}`;
+        
+        switch (action) {
+          case 'replace':
+            sedCmd += `'${range}s/.*/${content}/' '${file}'`;
+            break;
+          case 'delete':
+            sedCmd += `'${range}d' '${file}'`;
+            break;
+          case 'insert_after':
+            sedCmd += `'${range}a\\
+${content}' '${file}'`;
+            break;
+          case 'insert_before':
+            sedCmd += `'${range}i\\
+${content}' '${file}'`;
+            break;
+          default:
+            throw new Error(`Unknown action: ${action}`);
+        }
+        
+        await execAsync(sedCmd);
+        
+        return {
+          content: [{
+            type: 'text',
+            text: `Successfully performed ${action} on line(s) ${range} in ${file}`
+          }]
+        };
+      }
+      
+      case 'perl_edit': {
+        const { file, script, backup = true, multiline = false } = args;
+        
+        if (!existsSync(file)) {
+          throw new Error(`File not found: ${file}`);
+        }
+        
+        const backupExt = backup ? '.bak' : '';
+        const multilineFlag = multiline ? '-0777 ' : '';
+        const perlCmd = `perl -i${backupExt} ${multilineFlag}-pe '${script}' '${file}'`;
+        
+        await execAsync(perlCmd);
+        
+        return {
+          content: [{
+            type: 'text',
+            text: `Successfully edited ${file} using Perl${backup ? ' (backup created as .bak)' : ''}`
+          }]
+        };
+      }
+      
+      case 'diff_preview': {
+        const { file, command, tool = 'perl' } = args;
+        
+        if (!existsSync(file)) {
+          throw new Error(`File not found: ${file}`);
+        }
+        
+        // Create temp file
+        const tempFile = `${file}.preview.tmp`;
+        await execAsync(`rm -f .bak; cp '${file}' '${tempFile}'`);
+        
+        // Apply command to temp file
+        let editCmd;
+        switch (tool) {
+          case 'perl':
+            editCmd = `perl -i -pe '${command}' '${tempFile}'`;
+            break;
+          case 'sed':
+            editCmd = `sed -i.tmp '${command}' '${tempFile}' && rm -f '${tempFile}.tmp'`;
+            break;
+          case 'awk':
+            editCmd = `awk '${command}' '${tempFile}' > '${tempFile}.new' && mv '${tempFile}.new' '${tempFile}'`;
+            break;
+        }
+        
+        await execAsync(editCmd);
+        
+        // Generate diff
+        const { stdout } = await execAsync(`diff -u '${file}' '${tempFile}' || true`);
+        
+        // Cleanup
+        await execAsync(`rm -f '${tempFile}'`);
+        
+        return {
+          content: [{
+            type: 'text',
+            text: stdout ? `Preview of changes:\n${stdout}` : 'No changes would be made'
+          }]
+        };
+      }
+      
+      case 'help': {
+        const { tool = 'all' } = args;
+        
+        const helpKey = tool === 'all' ? 'overview' : tool;
+        const content = helpContent[helpKey] || `No help available for tool: ${tool}\n\nAvailable tools: ${Object.keys(helpContent).join(', ')}`;
+        
+        return {
+          content: [{
+            type: 'text',
+            text: content
+          }]
+        };
+      }
+      
+      case 'restore_backup': {
+        const { file, keepBackup = true } = args;
+        
+        const backupFile = `${file}.bak`;
+        
+        // Check if backup exists
+        if (!existsSync(backupFile)) {
+          // Look for other common backup patterns
+          const alternatives = [
+            `${file}~`,
+            `${file}.backup`,
+            `${file}.orig`
+          ].filter(existsSync);
+          
+          if (alternatives.length > 0) {
+            throw new Error(`No .bak file found, but found: ${alternatives.join(', ')}`);
+          }
+          throw new Error(`No backup file found for ${file}`);
+        }
+        
+        // Read backup content
+        const backupContent = await readFile(backupFile, 'utf-8');
+        
+        // Check if current file exists and create a safety backup
+        if (existsSync(file)) {
+          await writeFile(`${file}.before-restore`, await readFile(file, 'utf-8'));
+        }
+        
+        // Restore the backup
+        await writeFile(file, backupContent);
+        
+        // Remove backup if requested
+        if (!keepBackup) {
+          await execAsync(`rm -f '${backupFile}'`);
+        }
+        
+        return {
+          content: [{
+            type: 'text',
+            text: `Successfully restored ${file} from backup${!keepBackup ? ' (backup removed)' : ''}\nSafety backup created: ${file}.before-restore`
+          }]
+        };
+      }
+      
+      case 'list_backups': {
+        const { directory = '.', pattern = '*.bak' } = args;
+        
+        // Find all backup files
+        const findCmd = `find ${directory} -name "${pattern}" -type f | head -100`;
+        const { stdout } = await execAsync(findCmd);
+        
+        if (!stdout.trim()) {
+          return {
+            content: [{
+              type: 'text',
+              text: `No backup files found matching pattern: ${pattern}`
+            }]
+          };
+        }
+        
+        const files = stdout.trim().split('\n');
+        
+        // Get file info for each backup
+        const backupInfo = [];
+        for (const backupFile of files) {
+          try {
+            const stats = await execAsync(`stat -f "%m %z" '${backupFile}' 2>/dev/null || stat -c "%Y %s" '${backupFile}'`);
+            const [mtime, size] = stats.stdout.trim().split(' ');
+            const date = new Date(parseInt(mtime) * 1000).toISOString().split('T')[0];
+            const sizeKB = Math.round(parseInt(size) / 1024);
+            
+            // Infer original file name
+            const originalFile = backupFile.replace(/\.(bak|backup|orig|~)$/, '');
+            backupInfo.push(`${backupFile} (${sizeKB}KB, ${date}) -> ${originalFile}`);
+          } catch {
+            backupInfo.push(backupFile);
+          }
+        }
+        
+        return {
+          content: [{
+            type: 'text',
+            text: `Found ${files.length} backup files:\n\n${backupInfo.join('\n')}\n\nTip: Use restore_backup to restore any of these files`
           }]
         };
       }
